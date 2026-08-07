@@ -54,9 +54,8 @@ if 'db' not in st.session_state:
 # 2. UI Layout
 # ==========================================
 st.title("🚗 DiDi Central Data & Reporting Framework")
-st.caption("Interactive Prototype for ISYS3303 BIT Project")
 
-tab1, tab2 = st.tabs(["📝 Data Entry Portal", "📊 Report Generator"])
+tab1, tab2 = st.tabs(["📝 1. Data Entry Portal", "📊 2. Report Generator"])
 
 # TAB 1: DATA ENTRY
 with tab1:
@@ -73,7 +72,7 @@ with tab1:
         in_red = st.number_input("Vouchers Redeemed", min_value=0, value=450)
         in_trips = st.number_input("Actual Trips", min_value=0, value=300)
         
-    if st.button("Submit Data to Database", type="primary"):
+    if st.button("Submit Data", type="primary"):
         new_row = pd.DataFrame([{
             'Date': pd.to_datetime(in_date),
             'Platform': in_plat,
@@ -83,41 +82,72 @@ with tab1:
             'Actual_Trips': int(in_trips)
         }])
         st.session_state.db = pd.concat([st.session_state.db, new_row], ignore_index=True)
-        st.success(f"Data for {in_date} successfully added!")
+        st.success(f"✅ Success! Data for {in_date} added to the database.")
         st.dataframe(st.session_state.db.tail(5))
 
 # TAB 2: REPORT GENERATOR
 with tab2:
     st.subheader("Generate automated reports based on database")
-    report_type = st.radio("Select Report Type", ["Daily", "Weekly", "Monthly", "Yearly"], horizontal=True)
     
-    df = st.session_state.db.copy()
-    
-    if report_type == "Daily":
-        df['Time_Period'] = df['Date'].dt.date.astype(str)
-    elif report_type == "Weekly":
-        df['Time_Period'] = df['Date'].dt.strftime('%Y-W%V')
-    elif report_type == "Monthly":
-        df['Time_Period'] = df['Date'].dt.strftime('%Y-%m')
-    elif report_type == "Yearly":
-        df['Time_Period'] = df['Date'].dt.year.astype(str)
+    # 這裡加入你想要的 Custom Date Range 功能
+    col_r1, col_r2, col_r3 = st.columns(3)
+    with col_r1:
+        report_type = st.radio("Select Time Scale", ["Daily", "Weekly", "Monthly", "Yearly", "Custom Date Range"])
+    with col_r2:
+        custom_start = st.date_input("Start Date (for Custom Range)", date.today() - timedelta(days=30))
+    with col_r3:
+        custom_end = st.date_input("End Date (for Custom Range)", date.today())
+        
+    if st.button("Generate Report", type="primary"):
+        df = st.session_state.db.copy()
+        
+        # 過濾自定義時間
+        if report_type == "Custom Date Range":
+            df = df[(df['Date'] >= pd.to_datetime(custom_start)) & (df['Date'] <= pd.to_datetime(custom_end))]
+            
+        if df.empty:
+            st.warning("⚠️ No data available for this period. Try adjusting your date range.")
+        else:
+            # 聚合資料
+            if report_type == "Daily":
+                df['Time_Period'] = df['Date'].dt.date.astype(str)
+            elif report_type == "Weekly":
+                df['Time_Period'] = df['Date'].dt.strftime('%Y-W%V')
+            elif report_type == "Monthly":
+                df['Time_Period'] = df['Date'].dt.strftime('%Y-%m')
+            elif report_type == "Yearly":
+                df['Time_Period'] = df['Date'].dt.year.astype(str)
+            else: # Custom 預設以日為單位顯示趨勢
+                df['Time_Period'] = df['Date'].dt.date.astype(str)
 
-    agg = df.groupby('Time_Period')[['Clicks', 'Redeemed_Vouchers', 'Actual_Trips']].sum().reset_index()
-    
-    total_red = agg['Redeemed_Vouchers'].sum()
-    total_trp = agg['Actual_Trips'].sum()
-    conv = (total_trp / total_red * 100) if total_red > 0 else 0
-    
-    # KPI Cards
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Total Redeemed Vouchers", f"{total_red:,}")
-    m2.metric("Total Actual Trips", f"{total_trp:,}")
-    m3.metric("Conversion Rate", f"{conv:.1f}%")
-    
-    # Trend Chart
-    fig_trend = px.line(
-        agg, x='Time_Period', y=['Redeemed_Vouchers', 'Actual_Trips'],
-        title=f"{report_type} Performance Trend",
-        color_discrete_sequence=["#999999", "#FF5A00"]
-    )
-    st.plotly_chart(fig_trend, use_container_width=True)
+            agg_time = df.groupby('Time_Period')[['Clicks', 'Redeemed_Vouchers', 'Actual_Trips']].sum().reset_index()
+            agg_time = agg_time.sort_values('Time_Period')
+            
+            # 顯示你原本的 KPI 總結
+            total_red = agg_time['Redeemed_Vouchers'].sum()
+            total_trp = agg_time['Actual_Trips'].sum()
+            conv_rate = (total_trp / total_red * 100) if total_red > 0 else 0
+            
+            st.markdown(f"### 📊 **Total Redeemed:** {total_red:,} | **Total Trips:** {total_trp:,} | **Conversion:** {conv_rate:.1f}%")
+            
+            # 顯示雙圖表
+            col_chart1, col_chart2 = st.columns(2)
+            
+            with col_chart1:
+                fig_trend = px.line(
+                    agg_time, x='Time_Period', y=['Redeemed_Vouchers', 'Actual_Trips'],
+                    markers=True, title="Performance Trend",
+                    color_discrete_sequence=["#999999", "#FF5A00"]
+                )
+                fig_trend.update_layout(template="plotly_white", xaxis_title="Time Period", yaxis_title="Count", legend_title_text='Metrics')
+                st.plotly_chart(fig_trend, use_container_width=True)
+                
+            with col_chart2:
+                agg_plat = df.groupby('Platform')[['Redeemed_Vouchers', 'Actual_Trips']].sum().reset_index()
+                fig_plat = px.bar(
+                    agg_plat, x='Platform', y=['Redeemed_Vouchers', 'Actual_Trips'],
+                    barmode='group', title="Platform Summary",
+                    color_discrete_sequence=["#CCCCCC", "#FF5A00"]
+                )
+                fig_plat.update_layout(template="plotly_white", yaxis_title="Count", legend_title_text='Metrics')
+                st.plotly_chart(fig_plat, use_container_width=True)
