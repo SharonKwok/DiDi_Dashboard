@@ -1,153 +1,93 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 import plotly.express as px
-from datetime import date, timedelta
+import plotly.graph_objects as go
+import numpy as np
 
-st.set_page_config(page_title="DiDi Central Data & Reporting Framework", layout="wide")
-
-# ==========================================
-# 1. Historical Mock Data Generation
-# ==========================================
-@st.cache_data
-def load_initial_data():
-    np.random.seed(42)
-    end_date = pd.to_datetime('today')
-    start_date = end_date - pd.Timedelta(days=365)
-    date_range = pd.date_range(start=start_date, end=end_date, freq='D')
-
-    platforms = ['Meta Ads', 'Quoll Email', 'App Promo Zone']
-    tiers = ['10% Off', '20% Off', '50% Off']
-
-    data = []
-    for d in date_range:
-        for _ in range(np.random.randint(1, 4)):
-            plat = np.random.choice(platforms)
-            tier = np.random.choice(tiers)
-            clicks = np.random.randint(500, 5000)
-            
-            if tier == '10% Off':
-                redeemed = int(clicks * np.random.uniform(0.1, 0.3))
-            elif tier == '20% Off':
-                redeemed = int(clicks * np.random.uniform(0.3, 0.6))
-            else:
-                redeemed = int(clicks * np.random.uniform(0.6, 0.8))
-                
-            trips = int(redeemed * np.random.uniform(0.4, 0.9))
-            
-            data.append({
-                'Date': d,
-                'Platform': plat,
-                'Voucher_Tier': tier,
-                'Clicks': clicks,
-                'Redeemed_Vouchers': redeemed,
-                'Actual_Trips': trips
-            })
-    df = pd.DataFrame(data)
-    df['Date'] = pd.to_datetime(df['Date'])
-    return df
-
-if 'db' not in st.session_state:
-    st.session_state.db = load_initial_data()
+# 設定頁面寬闊模式
+st.set_page_config(page_title="DiDi Promo Dashboard", layout="wide")
 
 # ==========================================
-# 2. UI Layout
+# 1. 模擬資料生成 (模擬 DiDi 的自動化後台數據)
 # ==========================================
-st.title("🚗 DiDi Central Data & Reporting Framework")
+# 假設這是後台自動清洗好的資料，不再需要 Excel 拼湊
+data = {
+    'Batch_ID': ['#MEL_WKND'] * 3 + ['#SYD_RAIN'] * 3,
+    'Voucher_Tier': ['10% Off', '20% Off', '50% Off', '10% Off', '20% Off', '50% Off'],
+    'Clicks': [15000, 18000, 25000, 8000, 12000, 20000],
+    'Redeemed': [5000, 10000, 22000, 3000, 8000, 18000],
+    'Actual_Trips': [1500, 4500, 18000, 1000, 4000, 15000],
+    'Avg_Usage_Per_User': [1.2, 1.8, 2.5, 1.1, 1.5, 2.1]
+}
+df = pd.DataFrame(data)
 
-tab1, tab2 = st.tabs(["📝 1. Data Entry Portal", "📊 2. Report Generator"])
+# ==========================================
+# 2. 側邊欄設計 (Sidebar)
+# ==========================================
+st.sidebar.image("https://upload.wikimedia.org/wikipedia/commons/thumb/c/c8/DiDi_logo.svg/2560px-DiDi_logo.svg.png", width=150)
+st.sidebar.title("Data Filters")
+time_granularity = st.sidebar.radio("Time Granularity (時間維度):", ["Daily / Weekly (Operations)", "Monthly / YoY (Marketing)"])
+selected_batch = st.sidebar.selectbox("Select Campaign Batch ID:", df['Batch_ID'].unique())
 
-# TAB 1: DATA ENTRY
-with tab1:
-    st.subheader("Input manual metrics to feed the reporting database")
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        in_date = st.date_input("Date", date.today())
-        in_plat = st.selectbox("Platform", ['Meta Ads', 'Quoll Email', 'App Promo Zone'])
-        in_tier = st.selectbox("Voucher Tier", ['10% Off', '20% Off', '50% Off'])
-        
-    with col2:
-        in_clicks = st.number_input("Total Clicks / Opens", min_value=0, value=1000)
-        in_red = st.number_input("Vouchers Redeemed", min_value=0, value=450)
-        in_trips = st.number_input("Actual Trips", min_value=0, value=300)
-        
-    if st.button("Submit Data", type="primary"):
-        new_row = pd.DataFrame([{
-            'Date': pd.to_datetime(in_date),
-            'Platform': in_plat,
-            'Voucher_Tier': in_tier,
-            'Clicks': int(in_clicks),
-            'Redeemed_Vouchers': int(in_red),
-            'Actual_Trips': int(in_trips)
-        }])
-        st.session_state.db = pd.concat([st.session_state.db, new_row], ignore_index=True)
-        st.success(f"✅ Success! Data for {in_date} added to the database.")
-        st.dataframe(st.session_state.db.tail(5))
+# ==========================================
+# 3. 主畫面與 KPI 卡片 (Top KPIs)
+# ==========================================
+st.title("📊 Promotional Performance Dashboard")
+st.markdown("Automated insights replacing manual Excel Batch ID calculations.")
 
-# TAB 2: REPORT GENERATOR
-with tab2:
-    st.subheader("Generate automated reports based on database")
-    
-    # 這裡加入你想要的 Custom Date Range 功能
-    col_r1, col_r2, col_r3 = st.columns(3)
-    with col_r1:
-        report_type = st.radio("Select Time Scale", ["Daily", "Weekly", "Monthly", "Yearly", "Custom Date Range"])
-    with col_r2:
-        custom_start = st.date_input("Start Date (for Custom Range)", date.today() - timedelta(days=30))
-    with col_r3:
-        custom_end = st.date_input("End Date (for Custom Range)", date.today())
-        
-    if st.button("Generate Report", type="primary"):
-        df = st.session_state.db.copy()
-        
-        # 過濾自定義時間
-        if report_type == "Custom Date Range":
-            df = df[(df['Date'] >= pd.to_datetime(custom_start)) & (df['Date'] <= pd.to_datetime(custom_end))]
-            
-        if df.empty:
-            st.warning("⚠️ No data available for this period. Try adjusting your date range.")
-        else:
-            # 聚合資料
-            if report_type == "Daily":
-                df['Time_Period'] = df['Date'].dt.date.astype(str)
-            elif report_type == "Weekly":
-                df['Time_Period'] = df['Date'].dt.strftime('%Y-W%V')
-            elif report_type == "Monthly":
-                df['Time_Period'] = df['Date'].dt.strftime('%Y-%m')
-            elif report_type == "Yearly":
-                df['Time_Period'] = df['Date'].dt.year.astype(str)
-            else: # Custom 預設以日為單位顯示趨勢
-                df['Time_Period'] = df['Date'].dt.date.astype(str)
+# 篩選所選的活動資料
+filtered_df = df[df['Batch_ID'] == selected_batch]
+total_clicks = filtered_df['Clicks'].sum()
+total_trips = filtered_df['Actual_Trips'].sum()
+true_conversion = (total_trips / total_clicks) * 100
+avg_usage = filtered_df['Avg_Usage_Per_User'].mean()
 
-            agg_time = df.groupby('Time_Period')[['Clicks', 'Redeemed_Vouchers', 'Actual_Trips']].sum().reset_index()
-            agg_time = agg_time.sort_values('Time_Period')
-            
-            # 顯示你原本的 KPI 總結
-            total_red = agg_time['Redeemed_Vouchers'].sum()
-            total_trp = agg_time['Actual_Trips'].sum()
-            conv_rate = (total_trp / total_red * 100) if total_red > 0 else 0
-            
-            st.markdown(f"### 📊 **Total Redeemed:** {total_red:,} | **Total Trips:** {total_trp:,} | **Conversion:** {conv_rate:.1f}%")
-            
-            # 顯示雙圖表
-            col_chart1, col_chart2 = st.columns(2)
-            
-            with col_chart1:
-                fig_trend = px.line(
-                    agg_time, x='Time_Period', y=['Redeemed_Vouchers', 'Actual_Trips'],
-                    markers=True, title="Performance Trend",
-                    color_discrete_sequence=["#999999", "#FF5A00"]
-                )
-                fig_trend.update_layout(template="plotly_white", xaxis_title="Time Period", yaxis_title="Count", legend_title_text='Metrics')
-                st.plotly_chart(fig_trend, use_container_width=True)
-                
-            with col_chart2:
-                agg_plat = df.groupby('Platform')[['Redeemed_Vouchers', 'Actual_Trips']].sum().reset_index()
-                fig_plat = px.bar(
-                    agg_plat, x='Platform', y=['Redeemed_Vouchers', 'Actual_Trips'],
-                    barmode='group', title="Platform Summary",
-                    color_discrete_sequence=["#CCCCCC", "#FF5A00"]
-                )
-                fig_plat.update_layout(template="plotly_white", yaxis_title="Count", legend_title_text='Metrics')
-                st.plotly_chart(fig_plat, use_container_width=True)
+# 顯示 KPI 卡片
+col1, col2, col3 = st.columns(3)
+col1.metric("Total Actual Trips", f"{total_trips:,}")
+col2.metric("True Trip Conversion Rate", f"{true_conversion:.1f}%", "Effectiveness Metric")
+col3.metric("Avg Usage per Customer", f"{avg_usage:.2f}", "Habit Building Metric")
+
+st.markdown("---")
+
+# ==========================================
+# 4. 核心圖表區 (Core Visualisations)
+# ==========================================
+col_left, col_right = st.columns(2)
+
+# 圖表 A: 三階段歸因漏斗 (3-Stage Attribution Funnel)
+# 背書: Rust et al. 2004 (Marketing Productivity Chain)
+with col_left:
+    st.subheader("1. 3-Stage Attribution Funnel")
+    funnel_data = dict(
+        Stage=['1. Ad Clicks (Awareness)', '2. Vouchers Redeemed (Intent)', '3. Actual Trips (Conversion)'],
+        Value=[total_clicks, filtered_df['Redeemed'].sum(), total_trips]
+    )
+    fig_funnel = px.funnel(funnel_data, x='Value', y='Stage', title="Funnel Drop-off Analysis")
+    st.plotly_chart(fig_funnel, use_container_width=True)
+
+# 圖表 B: 解決 Batch ID 人工痛點的自動化分級圖
+# 背書: 自動化處理取代 Excel 手工
+with col_right:
+    st.subheader("2. Voucher Tier Performance (Batch Breakdown)")
+    # 計算每個 Tier 的真實轉換率
+    filtered_df['Conversion_%'] = (filtered_df['Actual_Trips'] / filtered_df['Clicks']) * 100
+    fig_bar = px.bar(filtered_df, x='Voucher_Tier', y='Conversion_%', color='Voucher_Tier',
+                     text_auto='.1f', title="Trip Conversion Rate by Discount Tier")
+    st.plotly_chart(fig_bar, use_container_width=True)
+
+st.markdown("---")
+
+# ==========================================
+# 5. 情境與高峰預測區 (Contextual Peak Analysis)
+# ==========================================
+st.subheader("3. Peak Redemption Periods & Contextual Triggers")
+st.info("💡 Insight: Redemption spikes observed during 17:00-19:00 on rainy days. (Powered by Grewal et al., 2016)")
+
+# 模擬一個熱力圖 (星期 vs 小時)
+np.random.seed(42)
+heatmap_data = np.random.randint(100, 1000, size=(7, 24))
+days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+fig_heat = px.imshow(heatmap_data, labels=dict(x="Hour of Day", y="Day of Week", color="Trips"),
+                     x=[str(i) for i in range(24)], y=days, title="Weekly Peak Hours Heatmap")
+st.plotly_chart(fig_heat, use_container_width=True)
